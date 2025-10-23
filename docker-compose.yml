@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:29092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+    ports:
+      - "29092:29092"   # external Kafka
+      - "9092:9092"     # internal Kafka
+      - "9644:9644"     # admin API
+      - "8082:8082"     # Pandaproxy
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - redpanda_network
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: redpanda-console
+    ports:
+      - "8080:8080"
+    environment:
+      - CONFIG_FILEPATH=/config.yml
+    volumes:
+      - ./console-config.yml:/config.yml
+    depends_on:
+      - redpanda
+    networks:
+      - redpanda_network
+
+volumes:
+  redpanda_data:
+
+networks:
+  redpanda_network:
+    driver: bridge
+

@@ -12,58 +12,46 @@ This repository contains four Python services and one streaming infrastructure s
 
 Architecture overview
 
-```mermaid
-flowchart LR
-    subgraph Exchange
-      BF(Bitfinex WS)
-    end
+```
+                        +----------------------+
+                        |     Bitfinex WS      |
+                        |  trade:1m:tBTCUSD    |
+                        +----------+-----------+
+                                   |
+                                   | WebSocket JSON candles
+                                   v
++--------------------+     +-------+--------+      +-------------------+
+|  trade-producer    | --> |  Kafka Topic   |   -> |   ohlc-consumer   |
+| (Bitfinex -> Kafka)|     |   candles      |   |  | (normalize -> ohlc)|
++--------------------+     +-------+--------+   |  +---------+---------+
+                                   |            |            |
+                                   |            |            |
+                                   |            |            v
+                                   |            |   +--------+---------+
+                                   |            |   |  Kafka Topic     |
+                                   |            |   |      ohlc        |
+                                   |            |   +--------+---------+
+                                   |            |           |
+                                   |            |           v
+                           +-------+--------+   |     +------+----------+
+                           |  trade-consumer|   |     | feature-producer|
+                           | (map -> trades)|   |     | (ohlc -> FG)    |
+                           +-------+--------+   |     +------+----------+
+                                   |            |            |
+                                   v            |            v
+                           +-------+--------+   |     +------+----------+
+                           |  Kafka Topic   |   |     | Hopsworks FG    |
+                           |     trades     | --|       | ohlc_features v1|
+                           +----------------+        +------------------+
 
-    subgraph Infra[Redpanda (Kafka API)]
-      K1[(Topic: candles)]
-      K2[(Topic: ohlc)]
-      K3[(Topic: trades)]
-    end
-
-    TP[trade-producer\n(Bitfinex -> candles)]
-    OC[ohlc-consumer\n(candles -> normalize -> ohlc)]
-    TC[trade-consumer\n(candles -> map -> trades)]
-    FP[feature-producer\n(ohlc -> Hopsworks FG)]
-
-    BF -- WS candles --> TP
-    TP -- JSON --> K1
-    K1 -- JSON --> OC
-    K1 -- JSON --> TC
-    OC -- normalized OHLC JSON --> K2
-    TC -- mapped trade JSON --> K3
-    K2 -- OHLC JSON --> FP
-
-    subgraph FS[Hopsworks Feature Store]
-      FG[(Feature Group: ohlc_features v1)]
-    end
-    FP -- batch insert --> FG
+Infra: Redpanda broker + Console (docker-compose)
 ```
 
 Data flow detail
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant BF as Bitfinex WS
-    participant TP as trade-producer
-    participant CANDLES as Kafka topic "candles"
-    participant OC as ohlc-consumer
-    participant OHLC as Kafka topic "ohlc"
-    participant FP as feature-producer
-    participant HS as Hopsworks Feature Store
-
-    BF->>TP: subscribe trade:1m:tBTCUSD candles
-    TP->>CANDLES: produce JSON {timestamp, open, high, low, close, volume, symbol, timeframe}
-    OC->>CANDLES: consume JSON
-    OC->>OC: validate & normalize fields (types, defaults)
-    OC->>OHLC: produce normalized JSON
-    FP->>OHLC: consume normalized OHLC
-    FP->>HS: batch insert into FG ohlc_features v1 (symbol, timestamp, o/h/l/c, volume, timeframe, event_time)
-```
+- trade-producer subscribes to Bitfinex WS and produces JSON candles to Kafka topic "candles".
+- ohlc-consumer consumes from "candles", validates/normalizes, and produces to topic "ohlc".
+- trade-consumer consumes from "candles", maps each to trivial OHLC, and produces to topic "trades".
+- feature-producer consumes from "ohlc" and batches inserts into Hopsworks Feature Store feature group ohlc_features v1.
 
 Services
 

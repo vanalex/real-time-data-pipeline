@@ -1,4 +1,4 @@
-# Real-Time Data Pipelines
+# Real-Time feature pipeline
 
 A small, streaming reference project using Redpanda (Kafka API) and Quix Streams to build a real-time pipeline from a crypto exchange WebSocket into Kafka topics, normalize/branch the stream, and finally publish features into a Hopsworks Feature Store.
 
